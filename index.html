@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio Transcriptor</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      padding: 40px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 800px;
+      width: 100%;
+      background: #2a2a2a;
+      border-radius: 12px;
+      padding: 40px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+
+    h1 {
+      font-size: 28px;
+      margin-bottom: 10px;
+      color: #fff;
+    }
+
+    #status {
+      color: #888;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+
+    .controls {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 30px;
+    }
+
+    button {
+      flex: 1;
+      padding: 16px 32px;
+      font-size: 16px;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    #startBtn {
+      background: #4CAF50;
+      color: white;
+    }
+
+    #startBtn:hover:not(:disabled) {
+      background: #45a049;
+      transform: translateY(-1px);
+    }
+
+    #stopBtn {
+      background: #f44336;
+      color: white;
+    }
+
+    #stopBtn:hover:not(:disabled) {
+      background: #da190b;
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 10px;
+      font-weight: 600;
+      color: #aaa;
+      font-size: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    textarea {
+      width: 100%;
+      height: 250px;
+      padding: 20px;
+      background: #1a1a1a;
+      border: 2px solid #3a3a3a;
+      border-radius: 8px;
+      color: #e0e0e0;
+      font-size: 15px;
+      font-family: 'Courier New', monospace;
+      resize: none;
+      line-height: 1.6;
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: #4CAF50;
+    }
+
+    #downloadSection {
+      margin-top: 30px;
+      padding: 20px;
+      background: #1a1a1a;
+      border-radius: 8px;
+      display: none;
+    }
+
+    .download-links {
+      display: flex;
+      gap: 15px;
+      margin-top: 15px;
+    }
+
+    a {
+      flex: 1;
+      padding: 14px 24px;
+      background: #4CAF50;
+      color: white;
+      text-decoration: none;
+      border-radius: 6px;
+      text-align: center;
+      font-weight: 600;
+      transition: all 0.2s;
+    }
+
+    a:hover {
+      background: #45a049;
+      transform: translateY(-1px);
+    }
+
+    .download-title {
+      color: #fff;
+      font-weight: 600;
+      margin-bottom: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Audio Transcriptor</h1>
+    <p id="status">Ready to record</p>
+    
+    <div class="controls">
+      <button id="startBtn">Start Recording</button>
+      <button id="stopBtn" disabled>Stop Recording</button>
+    </div>
+
+    <label>Live Transcription</label>
+    <textarea id="transcript" readonly placeholder="Transcription will appear here..."></textarea>
+
+    <div id="downloadSection">
+      <div class="download-title">Download Files</div>
+      <div class="download-links">
+        <a id="audioLink" download>Download Audio</a>
+        <a id="transcriptLink" download>Download Transcript</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
