@@ -7,3 +7,4 @@ soundfile
 numpy
 ffmpeg-python
 pydub
+whisperx
