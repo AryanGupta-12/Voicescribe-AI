@@ -25,7 +25,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-model = whisper.load_model("base")
 model_realtime = whisper.load_model("tiny")
 RECORDINGS_DIR = "recordings"
 DIARIZED_DIR = "diarized_transcripts"
@@ -112,12 +111,6 @@ async def save_recording(audio: UploadFile = File(...)):
         
         audio_segment = AudioSegment.from_file(webm_path, format="webm")
         audio_segment.export(wav_path, format="wav")
-        
-        result = model.transcribe(wav_path, fp16=False)
-        transcript = result["text"]
-        
-        with open(transcript_path, "w", encoding="utf-8") as f:
-            f.write(transcript)
 
         warnings.filterwarnings("ignore", category=UserWarning)
         warnings.filterwarnings("ignore", category=FutureWarning)
@@ -129,6 +122,10 @@ async def save_recording(audio: UploadFile = File(...)):
         
         whisperx_model = whisperx.load_model("small", device=device, compute_type=compute_type)
         whisperx_result = whisperx_model.transcribe(wav_path)
+
+        basic_transcript = " ".join([seg["text"] for seg in whisperx_result["segments"]])
+        with open(transcript_path, "w", encoding="utf-8") as f:
+            f.write(basic_transcript)
         
         align_model, align_metadata = whisperx.load_align_model(
             language_code=whisperx_result["language"], device=device
