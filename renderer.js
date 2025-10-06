@@ -12,7 +12,7 @@ const stopBtn = document.getElementById('stopBtn');
 const transcriptBox = document.getElementById('transcript');
 const downloadSection = document.getElementById('downloadSection');
 const audioLink = document.getElementById('audioLink');
-const transcriptLink = document.getElementById('transcriptLink');
+const diarizedLink = document.getElementById('diarizedLink');
 const statusText = document.getElementById('status');
 
 startBtn.addEventListener('click', startRecording);
@@ -140,7 +140,7 @@ async function stopRecording() {
       const result = await response.json();
       
       audioLink.href = `http://localhost:8000/download/audio/${result.audio_file}`;
-      transcriptLink.href = `http://localhost:8000/download/transcript/${result.transcript_file}`;
+      diarizedLink.href =  `http://localhost:8000/download/diarized/${result.diarized_file}`;
       
       downloadSection.style.display = 'block';
       statusText.textContent = 'Recording Complete';

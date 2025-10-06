@@ -11,6 +11,9 @@ import soundfile as sf
 import numpy as np
 import io
 from pydub import AudioSegment
+import whisperx
+from dotenv import load_dotenv
+import warnings
 
 app = FastAPI()
 
@@ -25,7 +28,9 @@ app.add_middleware(
 model = whisper.load_model("base")
 model_realtime = whisper.load_model("tiny")
 RECORDINGS_DIR = "recordings"
+DIARIZED_DIR = "diarized_transcripts"
 os.makedirs(RECORDINGS_DIR, exist_ok=True)
+os.makedirs(DIARIZED_DIR, exist_ok=True)
 
 audio_buffers = {}
 full_transcript = {}
@@ -113,6 +118,55 @@ async def save_recording(audio: UploadFile = File(...)):
         
         with open(transcript_path, "w", encoding="utf-8") as f:
             f.write(transcript)
+
+        warnings.filterwarnings("ignore", category=UserWarning)
+        warnings.filterwarnings("ignore", category=FutureWarning)
+        
+        load_dotenv()
+        
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        compute_type = "float16" if device == "cuda" else "int8"
+        
+        whisperx_model = whisperx.load_model("small", device=device, compute_type=compute_type)
+        whisperx_result = whisperx_model.transcribe(wav_path)
+        
+        align_model, align_metadata = whisperx.load_align_model(
+            language_code=whisperx_result["language"], device=device
+        )
+
+        result_aligned = whisperx.align(
+            whisperx_result["segments"],
+            align_model,
+            align_metadata,
+            wav_path,
+            device=device
+        )
+
+        hf_token = os.getenv("HF_TOKEN")
+        
+        if hf_token:
+            diarize_model = whisperx.diarize.DiarizationPipeline(
+                use_auth_token=hf_token,
+                device=torch.device(device)
+            )
+            
+            diarize_segments = diarize_model(wav_path)
+            
+            result_diarized = whisperx.assign_word_speakers(
+                diarize_segments,
+                result_aligned
+            )
+
+            diarized_filename = "diarized_"+transcript_filename
+            diarized_path = os.path.join(DIARIZED_DIR, diarized_filename)
+
+            with open(diarized_path, "w", encoding="utf-8") as f:
+                for seg in result_diarized["segments"]:
+                    speaker = seg.get('speaker', 'UNKNOWN')
+                    f.write(f"[{seg['start']:.1f}s - {seg['end']:.1f}s] {speaker}: {seg['text']}\n")
+        else:
+            print("HF_TOKEN not found, skipping diarization")
+        
             
         
     except Exception as e:
@@ -125,7 +179,7 @@ async def save_recording(audio: UploadFile = File(...)):
     
     return {
         "audio_file": wav_filename,
-        "transcript_file": transcript_filename
+        "diarized_file": diarized_filename
     }
 
 @app.get("/download/audio/{filename}")
@@ -133,10 +187,11 @@ async def download_audio(filename: str):
     file_path = os.path.join(RECORDINGS_DIR, filename)
     return FileResponse(file_path, media_type="audio/wav", filename=filename)
 
-@app.get("/download/transcript/{filename}")
-async def download_transcript(filename: str):
-    file_path = os.path.join(RECORDINGS_DIR, filename)
+@app.get("/download/diarized/{filename}")
+async def download_diarized(filename: str):
+    file_path = os.path.join(DIARIZED_DIR, filename)
     return FileResponse(file_path, media_type="text/plain", filename=filename)
+
 
 if __name__ == "__main__":
     import uvicorn
