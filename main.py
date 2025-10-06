@@ -3,13 +3,10 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import whisper
 import torch
-import asyncio
 import os
 import uuid
 from datetime import datetime
-import soundfile as sf
 import numpy as np
-import io
 from pydub import AudioSegment
 import whisperx
 from dotenv import load_dotenv
