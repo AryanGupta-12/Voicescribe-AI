@@ -1,0 +1,10 @@
+[0.0s - 2.6s] SPEAKER_01:  People say, I'll start when I feel ready.
+[3.8s - 4.7s] SPEAKER_01: But here's a secret.
+[5.6s - 8.8s] SPEAKER_01: Motivation comes after action, not before.
+[8.9s - 12.9s] SPEAKER_00: That reminds me of when I struggled with a personal challenge.
+[13.7s - 16.6s] SPEAKER_00: I kept waiting for the perfect moment to start.
+[17.4s - 21.1s] SPEAKER_00: But that moment never came, until I just took the first step.
+[21.8s - 25.1s] SPEAKER_00: And once I did, everything started falling into place.
+[25.6s - 26.8s] SPEAKER_01: That's a great point.
+[27.5s - 30.5s] SPEAKER_01:  and I remember feeling the same when I was learning English.
+[31.6s - 32.9s] SPEAKER_01: At first, I thought,
