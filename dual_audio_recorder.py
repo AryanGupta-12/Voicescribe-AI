@@ -11,21 +11,17 @@ class DualAudioRecorder:
         self.output_dir = output_dir
         os.makedirs(output_dir, exist_ok=True)
         
-        # Audio settings
         self.CHUNK = 1024
         self.FORMAT = pyaudio.paInt16
         self.CHANNELS = 2
         self.RATE = 44100
         
-        # Control flags
         self.is_recording = False
         self.system_thread = None
         self.mic_thread = None
         
-        # PyAudio instance
         self.audio = pyaudio.PyAudio()
         
-        # File paths
         self.timestamp = None
         self.system_path = None
         self.mic_path = None
@@ -47,13 +43,11 @@ class DualAudioRecorder:
             
             print(f"{i}: {device_info.get('name')} (Inputs: {max_input})")
             
-            # Detect system audio (loopback/stereo mix)
             if max_input > 0 and any(keyword in device_name for keyword in 
                 ['stereo mix', 'loopback', 'wave out', 'what u hear']):
                 system_device = i
                 print(f"   → Found System Audio Device!")
             
-            # Detect microphone
             if max_input > 0 and any(keyword in device_name for keyword in 
                 ['microphone', 'mic', 'input']):
                 if mic_device is None:  # Get first mic
@@ -90,7 +84,6 @@ class DualAudioRecorder:
             stream.stop_stream()
             stream.close()
             
-            # Save to WAV file
             wf = wave.open(output_path, 'wb')
             wf.setnchannels(self.CHANNELS)
             wf.setsampwidth(self.audio.get_sample_size(self.FORMAT))
@@ -109,7 +102,6 @@ class DualAudioRecorder:
             print("Already recording!")
             return False
         
-        # Find devices
         system_device, mic_device = self.find_audio_devices()
         
         if system_device is None:
@@ -148,7 +140,7 @@ class DualAudioRecorder:
         self.system_thread.start()
         self.mic_thread.start()
         
-        print(f"\n🎙️  Recording started!")
+        print(f"\nRecording started!")
         print(f"System: {self.system_path}")
         print(f"Mic: {self.mic_path}")
         return True
@@ -159,7 +151,7 @@ class DualAudioRecorder:
             print("Not recording!")
             return None
         
-        print("\n⏹️  Stopping recording...")
+        print("\nStopping recording...")
         self.is_recording = False
         
         # Wait for threads to finish
@@ -168,7 +160,7 @@ class DualAudioRecorder:
         if self.mic_thread:
             self.mic_thread.join(timeout=2)
         
-        print("✅ Recording stopped!")
+        print("Recording stopped!")
         return self.system_path, self.mic_path
     
     def merge_audio_tracks(self, system_gain_db=0, mic_gain_db=0):
@@ -213,7 +205,7 @@ class DualAudioRecorder:
             # Export merged audio
             merged.export(self.merged_path, format="wav")
             
-            print(f"✅ Merged audio saved to: {self.merged_path}")
+            print(f"Merged audio saved to: {self.merged_path}")
             return self.merged_path
             
         except Exception as e:
@@ -227,30 +219,24 @@ class DualAudioRecorder:
         self.audio.terminate()
 
 
-# Example usage
 if __name__ == "__main__":
     recorder = DualAudioRecorder()
     
     try:
-        # Start recording
         recorder.start_recording()
         
-        # Record for 10 seconds (or until user stops)
         import time
         input("Press Enter to stop recording...")
         
-        # Stop recording
         recorder.stop_recording()
         
-        # Merge tracks (adjust volumes if needed)
-        # Positive values increase volume, negative decrease
         merged_file = recorder.merge_audio_tracks(
-            system_gain_db=-3,  # Reduce system audio by 3dB
-            mic_gain_db=3       # Boost mic by 3dB
+            system_gain_db=-3,  
+            mic_gain_db=3       
         )
         
         if merged_file:
-            print(f"\n🎉 Final merged file: {merged_file}")
+            print(f"\nFinal merged file: {merged_file}")
         
     finally:
         recorder.cleanup()
