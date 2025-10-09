@@ -1,0 +1,28 @@
+=== SPEAKER DIARIZATION TRANSCRIPT ===
+Total speakers detected: 2
+Overlapping speech segments: 3
+
+⚠️  OVERLAPPING SPEECH DETECTED:
+[3.2s - 3.4s] → SPEAKER_00 + SPEAKER_01
+[3.5s - 3.6s] → SPEAKER_00 + SPEAKER_01
+[69.0s - 70.2s] → SPEAKER_00 + SPEAKER_01
+
+=== TRANSCRIPT ===
+
+[3.3s - 3.7s] SPEAKER_00:  Hello Tia.
+[4.0s - 4.2s] SPEAKER_01: Hello.
+[5.8s - 7.9s] SPEAKER_01: How are you?
+[8.3s - 9.3s] SPEAKER_01: I am good.
+[9.6s - 11.1s] UNKNOWN: What about you?
+[11.1s - 12.0s] SPEAKER_00: I am also fine.
+[13.5s - 17.1s] UNKNOWN: What are you doing currently?
+[17.4s - 25.0s] SPEAKER_01: Currently I am studying about some concepts of system design, direct news, redundancy and more.
+[26.5s - 26.9s] SPEAKER_00: Okay.
+[27.6s - 30.2s] SPEAKER_00: And what was your CGPN last semester?
+[31.1s - 38.6s] UNKNOWN:  My last semester's CGP was 9.8 and my overall CGP is around 9.2.
+[39.7s - 41.3s] SPEAKER_00: Okay, that's great.
+[42.3s - 46.6s] SPEAKER_00: And can you tell me about your latest project?
+[46.6s - 54.5s] SPEAKER_01: My latest project is, I'm one of the three artists for my company and I'm just in my current job, I don't check.
+[55.5s - 57.3s] SPEAKER_00: Okay, that's great, dear.
+[57.4s - 58.8s] SPEAKER_00: It was nice talking to you.
+[66.1s - 80.5s] UNKNOWN:  I myself have gone mad.

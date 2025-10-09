@@ -1,7 +1,0 @@
-[0.0s - 1.2s] SPEAKER_01:  the power of habits.
-[2.1s - 7.1s] SPEAKER_01: James Clear talks about this in Atomic Habits, how habits shape our identity.
-[7.8s - 14.0s] SPEAKER_01: Small changes may not seem big at first, but they redefine who you are over time.
-[14.8s - 15.1s] SPEAKER_02: Right.
-[15.8s - 23.9s] SPEAKER_02: Like reading just 10 minutes a day, practicing English for 5 minutes daily, or even replacing negative thoughts with positive affirmations.
-[24.8s - 26.6s] SPEAKER_00: And I love real life examples.
-[27.3s - 28.0s] SPEAKER_00: I know someone

@@ -6,6 +6,7 @@ let socket;
 let isRecording = false;
 let audioContext;
 let processor;
+let sessionId = null;
 
 const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
@@ -65,7 +66,7 @@ async function startRecording() {
       isRecording = true;
       startBtn.disabled = true;
       stopBtn.disabled = false;
-
+    
       processor = audioContext.createScriptProcessor(4096, 1, 1);
       
       processor.onaudioprocess = (e) => {
@@ -78,13 +79,22 @@ async function startRecording() {
           socket.send(int16Data.buffer);
         }
       };
-
+    
       systemAudioSource.connect(processor);
       processor.connect(audioContext.destination);
     };
 
     socket.onmessage = (event) => {
       const data = JSON.parse(event.data);
+      
+      // Capture session_id
+      if (data.type === 'session_id') {
+        sessionId = data.session_id;
+        console.log('Session ID:', sessionId);
+        return;
+      }
+      
+      // Handle transcript
       if (data.transcript) {
         transcriptBox.value = data.transcript;
         transcriptBox.scrollTop = transcriptBox.scrollHeight;
@@ -132,15 +142,19 @@ async function stopRecording() {
     formData.append('audio', audioBlob, 'recording.webm');
 
     try {
-      const response = await fetch('http://localhost:8000/save', {
-        method: 'POST',
-        body: formData
+      const response = await fetch(`http://localhost:8000/save?session_id=${sessionId}`, {
+        method: 'POST'
       });
-
+    
       const result = await response.json();
       
+      if (result.error) {
+        statusText.textContent = 'Error: ' + result.error;
+        return;
+      }
+      
       audioLink.href = `http://localhost:8000/download/audio/${result.audio_file}`;
-      diarizedLink.href =  `http://localhost:8000/download/diarized/${result.diarized_file}`;
+      diarizedLink.href = `http://localhost:8000/download/diarized/${result.diarized_file}`;
       
       downloadSection.style.display = 'block';
       statusText.textContent = 'Recording Complete';
