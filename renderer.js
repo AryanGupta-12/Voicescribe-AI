@@ -19,6 +19,65 @@ const statusText = document.getElementById('status');
 startBtn.addEventListener('click', startRecording);
 stopBtn.addEventListener('click', stopRecording);
 
+// CONTROL SOCKET: receives start/stop from backend presence poller
+let controlSocket = null;
+
+function setupControlSocket() {
+  try {
+    controlSocket = new WebSocket('ws://localhost:8000/ws/control');
+
+    controlSocket.onopen = () => {
+      console.log("Control socket connected");
+      // Optionally send a simple keepalive or identification
+      // controlSocket.send(JSON.stringify({ client: 'renderer' }));
+    };
+
+    controlSocket.onmessage = (evt) => {
+      try {
+        const payload = JSON.parse(evt.data);
+        if (payload && payload.command) {
+          console.log("Control command received:", payload.command);
+          if (payload.command === 'start') {
+            // only start if not already recording
+            if (!isRecording) {
+              startRecording();
+            } else {
+              console.log("Already recording — ignoring start command");
+            }
+          } else if (payload.command === 'stop') {
+            if (isRecording) {
+              stopRecording();
+            } else {
+              console.log("Not recording — ignoring stop command");
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Invalid control message", err);
+      }
+    };
+
+    controlSocket.onclose = () => {
+      console.log("Control socket closed — will retry in 5s");
+      // try reconnect after delay
+      setTimeout(setupControlSocket, 5000);
+    };
+
+    controlSocket.onerror = (err) => {
+      console.error("Control socket error", err);
+      controlSocket.close();
+    };
+  } catch (e) {
+    console.error("Failed to create control socket:", e);
+  }
+}
+
+// Call setup on load
+window.addEventListener('DOMContentLoaded', () => {
+  setupControlSocket();
+});
+
+
 async function startRecording() {
   try {
     audioChunks = [];

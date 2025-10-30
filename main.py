@@ -5,13 +5,21 @@ import whisper
 import torch
 import os
 import uuid
-from datetime import datetime
 import numpy as np
-from pydub import AudioSegment
 import whisperx
 from dotenv import load_dotenv
 import warnings
 from dual_audio_recorder import DualAudioRecorder
+import os
+import asyncio
+import httpx
+from fastapi import WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import RedirectResponse
+from msal import PublicClientApplication
+from typing import List
+import msal
+import atexit
+
 
 app = FastAPI()
 
@@ -32,6 +40,160 @@ os.makedirs(DIARIZED_DIR, exist_ok=True)
 active_recorders = {}
 audio_buffers = {}
 full_transcript = {}
+
+# Control websocket connections will be stored here
+control_connections: List[WebSocket] = []
+
+# Presence monitoring config
+load_dotenv()
+CLIENT_ID = os.getenv("AZURE_CLIENT_ID")
+print("client: ",CLIENT_ID)
+
+MONITOR_USER_UPN = os.getenv("MONITOR_USER_UPN")
+POLL_INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL_SECONDS", "5"))
+AUTHORITY = os.getenv("AUTHORITY", "https://login.microsoftonline.com/common")
+REDIRECT_URI = os.getenv("REDIRECT_URI", "http://localhost:8000/auth/callback")
+SCOPES = [os.getenv("MONITOR_SCOPE", "https://graph.microsoft.com/Presence.Read")]
+
+# Path to store token cache
+cache_file = "msal_cache.bin"
+
+token_cache = msal.SerializableTokenCache()
+if os.path.exists(cache_file):
+    token_cache.deserialize(open(cache_file, "r").read())
+
+msal_app = msal.PublicClientApplication(
+    CLIENT_ID,
+    authority=AUTHORITY,
+    token_cache=token_cache
+)
+
+atexit.register(lambda: open(cache_file, "w").write(token_cache.serialize()) if token_cache.has_state_changed else None)
+print("🧩 MSAL cache loaded:", os.path.exists(cache_file))
+user_accounts = []     # Will hold signed-in user accounts
+
+@app.websocket("/ws/control")
+async def control_ws(websocket: WebSocket):
+    """
+    Persistent control websocket for renderer to receive start/stop commands.
+    Renderer should connect on load.
+    """
+    await websocket.accept()
+    control_connections.append(websocket)
+    try:
+        while True:
+            # Keep connection alive by reading; renderer won't send anything normally.
+            _ = await websocket.receive_text()
+    except WebSocketDisconnect:
+        control_connections.remove(websocket)
+    except Exception:
+        if websocket in control_connections:
+            control_connections.remove(websocket)
+
+async def broadcast_control_command(cmd: str):
+    """
+    cmd: 'start' or 'stop'
+    Sends a JSON message to all connected control websocket clients.
+    """
+    dead = []
+    for ws in list(control_connections):
+        try:
+            await ws.send_json({"command": cmd})
+        except Exception:
+            # mark for removal if connection dead
+            dead.append(ws)
+    for ws in dead:
+        if ws in control_connections:
+            control_connections.remove(ws)
+
+@app.get("/login")
+async def login(request: Request):
+
+    accounts = msal_app.get_accounts()
+    if accounts:
+        result = msal_app.acquire_token_silent(SCOPES, account=accounts[0])
+        if result and "access_token" in result:
+            global token_cache
+            open(cache_file, "w").write(token_cache.serialize())
+            print("🔁 Silent login successful for", result.get("id_token_claims", {}).get("name"))
+            asyncio.create_task(poll_presence_loop())
+            return {"message": "Silent login successful! Presence poller started."}
+
+    auth_url = msal_app.get_authorization_request_url(
+        scopes=SCOPES,
+        redirect_uri=REDIRECT_URI,
+    )
+    return RedirectResponse(auth_url)
+
+
+@app.get("/auth/callback")
+async def auth_callback(request: Request):
+    # Step 2: exchange auth code for token
+    code = request.query_params.get("code")
+    if not code:
+        return {"error": "Missing authorization code"}
+
+    result = msal_app.acquire_token_by_authorization_code(
+        code,
+        scopes=SCOPES,
+        redirect_uri=REDIRECT_URI
+    )
+
+    if "access_token" in result:
+        global token_cache
+        open(cache_file, "w").write(token_cache.serialize())
+        print("✅ Login successful for", result.get("id_token_claims", {}).get("name"))
+        asyncio.create_task(poll_presence_loop())
+        return {"message": "Login successful! Presence poller started."}
+    else:
+        print("Login failed:", result)
+        return {"error": "Login failed", "details": result}
+
+async def poll_presence_loop():
+    """
+    Poll Microsoft Graph using delegated (user) token for /me/presence.
+    """
+    accounts = msal_app.get_accounts()
+    if not accounts:
+        print("⚠️ No account found in MSAL cache — please sign in via /login endpoint.")
+        return
+
+    result = msal_app.acquire_token_silent(SCOPES, account=accounts[0])
+    if not result or "access_token" not in result:
+        print("⚠️ No valid token found — please sign in via /login endpoint.")
+        return
+
+    headers = {"Authorization": f"Bearer {result['access_token']}"}
+    meeting_active = False
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        while True:
+            try:
+                resp = await client.get("https://graph.microsoft.com/v1.0/me/presence", headers=headers)
+                if resp.status_code == 401:
+                    print("Token expired. Please re-login via /login.")
+                    break  # Stop polling until user logs in again
+                resp.raise_for_status()
+                data = resp.json()
+                activity = data.get("activity", "")
+                availability = data.get("availability", "")
+                print(f"Presence: {activity} ({availability})")
+
+                is_meeting = any(word in activity.lower() for word in ["meeting", "call", "conference", "present"])
+                if is_meeting and not meeting_active:
+                    print("🎙️ Detected meeting start.")
+                    await broadcast_control_command("start")
+                    meeting_active = True
+                elif not is_meeting and meeting_active:
+                    print("🛑 Detected meeting end.")
+                    await broadcast_control_command("stop")
+                    meeting_active = False
+            except Exception as e:
+                print("Presence poller error:", e)
+
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -292,6 +454,23 @@ async def download_diarized(filename: str):
     file_path = os.path.join(DIARIZED_DIR, filename)
     return FileResponse(file_path, media_type="text/plain", filename=filename)
 
+async def try_silent_login():
+    accounts = msal_app.get_accounts()
+    if accounts:
+        result = msal_app.acquire_token_silent(SCOPES, account=accounts[0])
+        if result and "access_token" in result:
+            print("🔁 Silent login successful for", result.get("id_token_claims", {}).get("name"))
+            asyncio.create_task(poll_presence_loop())
+            return True
+    print("⚠️ Silent login failed or no cached account found.")
+    return False
+
+@app.on_event("startup")
+async def startup_event():
+    print("🚀 App started. Please open http://localhost:8000/login to sign in.")
+    success = await try_silent_login()
+    if not success:
+        print("🔒 Please open http://localhost:8000/login to sign in.")
 
 if __name__ == "__main__":
     import uvicorn
