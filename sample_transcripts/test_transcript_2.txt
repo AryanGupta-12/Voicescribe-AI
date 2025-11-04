@@ -1,0 +1,21 @@
+Alex: Morning, Jamie! Thanks for joining. I wanted to walk through where we are with the Farm2Door app before the stakeholder demo tomorrow.
+
+Jamie: Morning, Alex! Sure thing. The app’s in good shape — we’ve finished the core features: product listings, order placement, and payment integration.
+
+Alex: Great! Can you show me a quick run-through of the user flow?
+
+Jamie: Absolutely. Here’s the home screen — users can browse local farms, tap into one, and see available produce. I’ll select “Green Valley Farms.” You can see their listings, updated daily by the farmers.
+
+Alex: Nice, and how’s checkout working?
+
+Jamie: Users can add items to their cart, choose delivery or pickup, and complete payment through Stripe. Farmers get an instant order notification.
+
+Alex: Excellent. What about analytics and feedback?
+
+Jamie: That’s still in progress. We’ve added a feedback form prototype and are setting up analytics for tracking popular products.
+
+Alex: Perfect. Let’s highlight that in tomorrow’s demo — and mention that we’re targeting the pilot launch in two weeks.
+
+Jamie: Got it. I’ll polish the UI a bit and push the latest build by tonight.
+
+Alex: Sounds good, Jamie. Great work — the stakeholders will love it.

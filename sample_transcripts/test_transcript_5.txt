@@ -1,0 +1,26 @@
+=== SPEAKER DIARIZATION TRANSCRIPT ===
+Total speakers detected: 3
+
+=== TRANSCRIPT ===
+
+Priya: Morning team. Let’s review CityLink progress since our kickoff last week.
+
+Jordan: Morning! The core submission flow is complete — users can now report an issue with a title, description, and photo. I also integrated GPS tagging for automatic location capture.
+
+Amir: Backend endpoints are up for creating and retrieving reports. I’ve started user authentication with OTP login instead of email signup — we decided this would be simpler for quick access.
+
+Priya: That’s a good change. Let’s update the requirement doc: replace “email registration” with “OTP-based login via mobile number.” Also, we’ll need push notifications so users know when their report status changes.
+
+Jordan: Got it. I’ll add the notification logic using Firebase. The dashboard is still pending, though — I’ll start mock screens after we finalize API responses.
+
+Amir: I’ll expose an endpoint for status updates by tomorrow. Timeline-wise, backend is about 70% done; still on track for the four-week MVP.
+
+Priya: Perfect. Also, note a new requirement: multilingual support — at least English and Hindi for the first release. We had a request from the city council about it.
+
+Jordan: That might affect the UI layout slightly, but manageable.
+
+Priya: Great. Any blockers?
+
+Amir: Just one — our image upload API needs higher limits; current hosting restricts file size. I’ll check with infra.
+
+Priya: Good. Let’s plan another check-in in five days for dashboard review.

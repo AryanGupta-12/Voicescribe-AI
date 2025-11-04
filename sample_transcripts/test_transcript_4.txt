@@ -1,0 +1,24 @@
+=== SPEAKER DIARIZATION TRANSCRIPT ===
+Total speakers detected: 3
+
+=== TRANSCRIPT ===
+
+Priya: Thanks for joining, everyone. Let’s talk about the new project — CityLink. The goal is to create a mobile app that helps citizens report city issues like potholes, broken streetlights, or garbage collection delays directly to the municipality.
+
+Jordan: Great idea. So this is like a civic complaint tracker?
+
+Priya: Exactly. Users can report issues, upload photos, track resolution status, and get updates from the local authority.
+
+Amir: We should make sure it supports GPS tagging so the report location is automatic.
+
+Priya: Good point. We’ll include location services and image upload. I also want analytics dashboards for city officials to view complaint trends.
+
+Jordan: Okay, so core features are user reports, GPS tagging, photo uploads, and an admin dashboard. What’s the timeline?
+
+Priya: We’re targeting an MVP in four weeks and a pilot rollout in one city district in six weeks.
+
+Amir: I’ll handle backend APIs and database. Jordan, you can focus on frontend layout.
+
+Jordan: Works for me. I’ll start with the citizen report submission flow and basic UI screens.
+
+Priya: Excellent. Let’s also keep the design accessible — simple icons, large fonts, minimal colors. We’ll meet again next week to review progress.

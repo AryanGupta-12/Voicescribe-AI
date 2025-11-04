@@ -19,6 +19,13 @@ from msal import PublicClientApplication
 from typing import List
 import msal
 import atexit
+import json
+import re
+from fastapi import Body
+from typing import Dict
+from insights_generator import generate_insights_from_file
+import shutil
+from datetime import datetime
 
 
 app = FastAPI()
@@ -29,6 +36,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+
 )
 
 model_realtime = whisper.load_model("tiny")
@@ -70,7 +78,9 @@ msal_app = msal.PublicClientApplication(
 
 atexit.register(lambda: open(cache_file, "w").write(token_cache.serialize()) if token_cache.has_state_changed else None)
 print("🧩 MSAL cache loaded:", os.path.exists(cache_file))
-user_accounts = []     # Will hold signed-in user accounts
+user_accounts = []  
+
+meeting_metadata = []
 
 @app.websocket("/ws/control")
 async def control_ws(websocket: WebSocket):
@@ -171,8 +181,14 @@ async def poll_presence_loop():
             try:
                 resp = await client.get("https://graph.microsoft.com/v1.0/me/presence", headers=headers)
                 if resp.status_code == 401:
-                    print("Token expired. Please re-login via /login.")
-                    break  # Stop polling until user logs in again
+                    print("🔁 Access token expired — refreshing silently...")
+                    result = msal_app.acquire_token_silent(SCOPES, account=accounts[0])
+                    if not result or "access_token" not in result:
+                        print("⚠️ Silent refresh failed — please log in via /login.")
+                        break
+                    headers["Authorization"] = f"Bearer {result['access_token']}"
+                    continue
+                    
                 resp.raise_for_status()
                 data = resp.json()
                 activity = data.get("activity", "")
@@ -188,6 +204,8 @@ async def poll_presence_loop():
                     print("🛑 Detected meeting end.")
                     await broadcast_control_command("stop")
                     meeting_active = False
+
+
             except Exception as e:
                 print("Presence poller error:", e)
 
@@ -272,8 +290,54 @@ async def websocket_endpoint(websocket: WebSocket):
         if session_id in full_transcript:
             del full_transcript[session_id]
 
+def extract_project_state(markdown_path: str, json_path: str):
+    """Parse the latest insight markdown into structured JSON fields."""
+    try:
+        with open(markdown_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # Simple section extraction using regex headings
+        def section(*names):
+            """
+            Match headings like ## or ### (case-insensitive), optionally prefixed
+            with numbering (e.g. "3. Action Items"), and support alternate variations
+            like 'New Action Items', 'Updated Action Items', etc.
+            Returns the combined text for the first match.
+            """
+            # combine all heading names into one regex group
+            joined = "|".join([re.escape(n) for n in names])
+            pattern = rf"(?mi)^#+\s*(\d+\.\s*)?(?:{joined})(?:\s*[:\-–]?\s*)?(.*?)$(.*?)^(?=#+\s|\Z)"
+            match = re.search(pattern, content, re.S | re.M)
+            return match.group(3).strip() if match else ""
+
+
+        data = {
+            "project_name": os.path.basename(os.path.dirname(os.path.dirname(markdown_path))),
+            "project_objective": section("Project Objective"),
+            "discussion_summary": section("Discussion Summary", "Key Updates Since Last Meeting"),
+            "roadmap_timeline": section("Roadmap", "Roadmap & Timeline"),
+            "current_status": section("Current Status", "Status"),
+            "requirements": section("Requirements", "Requirements Discussed"),
+            "gaps": section("Gaps", "Risks", "New Risks or Blockers"),
+            "action_items": section("Action Items", "New Action Items"),
+            "key_decisions": section("Key Decisions", "New Decisions"),
+            "questions": section("Questions", "Questions & Concerns Raised"),
+            "next_steps": section("Next Steps"),
+            "changes_since_last_meeting": section("CHANGES SINCE LAST MEETING", "Changes Since Last Meeting"),
+            "last_updated": datetime.now().isoformat()
+        }
+
+        with open(json_path, "w", encoding="utf-8") as jf:
+            json.dump(data, jf, indent=2)
+        print(f"🗂️ project_state.json updated at {json_path}")
+
+    except Exception as e:
+        print(f"⚠️ Failed to extract project state: {e}")
+
+
+
 @app.post("/save")
-async def save_recording(session_id: str):
+async def save_recording(session_id: str, meeting_name: str = None):
     if session_id not in active_recorders:
         return {"error": "Session not found"}
     
@@ -437,6 +501,94 @@ async def save_recording(session_id: str):
     
     if session_id in active_recorders:
         del active_recorders[session_id]
+    
+    # === NEW CODE: Group transcript by meeting name (from renderer) ===
+    
+
+    if meeting_name:
+        # Remove trailing " | Microsoft Teams" or "– Microsoft Teams"
+        meeting_name = re.sub(r"\s*[\|\-–]\s*Microsoft Teams", "", meeting_name, flags=re.IGNORECASE)
+
+        # Replace invalid filename characters with underscores
+        meeting_name = re.sub(r'[<>:"/\\|?*]', "_", meeting_name)
+
+        # Trim and normalize spaces
+        meeting_name = meeting_name.strip().replace("  ", " ")
+
+        participants = []
+    elif meeting_metadata and len(meeting_metadata) == 2:
+        meeting_name = meeting_metadata[0].replace("/", "_").replace("\\", "_").strip()
+        participants = meeting_metadata[1]
+    else:
+        meeting_name = "Unknown_Meeting"
+        participants = []
+
+    print("Meeting Name:", meeting_name)
+    grouped_dir = os.path.join(DIARIZED_DIR, meeting_name)
+    os.makedirs(grouped_dir, exist_ok=True)
+
+    # Copy and prepend meeting info
+    grouped_path = os.path.join(grouped_dir, diarized_filename)
+    with open(diarized_path, "r", encoding="utf-8") as src, open(grouped_path, "w", encoding="utf-8") as dest:
+        dest.write("=== MEETING INFORMATION ===\n")
+        dest.write(f"Meeting Name: {meeting_name}\n")
+        if participants:
+            dest.write(f"Participants: {', '.join(participants)}\n\n")
+        else:
+            dest.write("Participants: Unknown\n\n")
+        dest.write(src.read())
+
+    print(f"📁 Transcript grouped under: {grouped_dir}")
+
+    # === Generate or update project insights ===
+    try:
+        project_dir = os.path.join(DIARIZED_DIR, meeting_name)
+        insights_dir = os.path.join(project_dir, "insights")
+        os.makedirs(insights_dir, exist_ok=True)
+
+        current_transcript = diarized_path
+        previous_insight = get_last_insight_path(project_dir)
+
+        if previous_insight and os.path.exists(previous_insight):
+            print(f"🧠 Updating insights for existing project: {meeting_name}")
+            # Merge old insight and new transcript
+            merged_input_path = os.path.join(insights_dir, "_tmp_merged.txt")
+            with open(previous_insight, "r", encoding="utf-8") as oldf, \
+                open(current_transcript, "r", encoding="utf-8") as newf, \
+                open(merged_input_path, "w", encoding="utf-8") as outf:
+                outf.write("=== PREVIOUS INSIGHT ===\n")
+                outf.write(oldf.read())
+                outf.write("\n\n=== NEW TRANSCRIPT ===\n")
+                outf.write(newf.read())
+
+            output_name = f"insight_{timestamp}.md"
+            output_path = os.path.join(insights_dir, output_name)
+            insights = generate_insights_from_file(
+                transcript_path=merged_input_path,
+                output_path=output_path
+            )
+            # update latest.md link
+            shutil.copy(output_path, os.path.join(insights_dir, "latest.md"))
+            os.remove(merged_input_path)
+        else:
+            print(f"🧠 Generating first insight for project: {meeting_name}")
+            output_name = f"insight_{timestamp}.md"
+            output_path = os.path.join(insights_dir, output_name)
+            insights = generate_insights_from_file(
+                transcript_path=current_transcript,
+                output_path=output_path
+            )
+            shutil.copy(output_path, os.path.join(insights_dir, "latest.md"))
+
+        # Convert insight markdown to a summarized project_state.json
+        latest_md = os.path.join(insights_dir, "latest.md")
+        json_state_path = os.path.join(project_dir, "project_state.json")
+        extract_project_state(latest_md, json_state_path)
+        print(f"✅ Insight generation complete for project: {meeting_name}")
+
+    except Exception as insight_err:
+        print(f"⚠️ Insight generation failed: {insight_err}")
+
         
     return {
         "audio_file": f"merged_{timestamp}.wav",
@@ -464,6 +616,144 @@ async def try_silent_login():
             return True
     print("⚠️ Silent login failed or no cached account found.")
     return False
+
+@app.get("/projects")
+async def list_projects():
+    projects = []
+    try:
+        # list directories only
+        for name in sorted(os.listdir(DIARIZED_DIR)):
+            path = os.path.join(DIARIZED_DIR, name)
+            if os.path.isdir(path):
+                
+                state_file = os.path.join(path, "project_state.json")
+                has_state = os.path.exists(state_file)
+                projects.append({
+                    "name": name,
+                    "has_state": has_state
+                })
+    except Exception as e:
+        print("Error listing projects:", e)
+        return {"error": str(e), "projects": []}
+    return {"projects": projects}
+
+@app.post("/projects/create")
+async def create_project(payload: Dict = Body(...)):
+    name = payload.get("name")
+    if not name:
+        return {"error": "Missing project name"}
+    # sanitize name similarly to how you sanitize meeting_name
+    safe_name = re.sub(r'\s*[\|\-–]\s*Microsoft Teams', "", name, flags=re.IGNORECASE)
+    safe_name = re.sub(r'[<>:"/\\|?*]', "_", safe_name).strip()
+    if not safe_name:
+        return {"error": "Invalid project name after sanitization"}
+    path = os.path.join(DIARIZED_DIR, safe_name)
+    try:
+        os.makedirs(path, exist_ok=True)
+        # also create meetings and insights subfolders for better organization
+        os.makedirs(os.path.join(path, "meetings"), exist_ok=True)
+        os.makedirs(os.path.join(path, "insights"), exist_ok=True)
+        return {"status": "created", "project": {"name": safe_name}}
+    except Exception as e:
+        print("Error creating project:", e)
+        return {"error": str(e)}
+
+def get_last_insight_path(project_dir: str) -> str:
+    insights_dir = os.path.join(project_dir, "insights")
+    if not os.path.exists(insights_dir):
+        return None
+    md_files = sorted(
+        [f for f in os.listdir(insights_dir) if f.endswith(".md")],
+        reverse=True
+    )
+    return os.path.join(insights_dir, md_files[0]) if md_files else None
+
+@app.get("/project/overview")
+async def get_project_overview(name: str):
+    """
+    Returns the latest project_state.json contents for the given project name.
+    """
+    try:
+        project_dir = os.path.join(DIARIZED_DIR, name)
+        json_path = os.path.join(project_dir, "project_state.json")
+
+        if not os.path.exists(json_path):
+            return {"error": f"No overview found for {name}"}
+
+        with open(json_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        data["project_name"]=name
+        return data
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.post("/test_insight")
+async def test_insight(project_name: str, transcript_path: str):
+    """
+    Simulate Phase 2 without a real meeting or audio.
+    Example POST body:
+    {
+      "project_name": "Project Orion",
+      "transcript_path": "sample_transcript.txt"
+    }
+    """
+    try:
+        project_dir = os.path.join(DIARIZED_DIR, project_name)
+        os.makedirs(os.path.join(project_dir, "insights"), exist_ok=True)
+
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+        current_transcript = transcript_path
+        previous_insight = get_last_insight_path(project_dir)
+
+        if previous_insight and os.path.exists(previous_insight):
+            merged_input_path = os.path.join(project_dir, "insights", "_tmp_merged.txt")
+            with open(previous_insight, "r", encoding="utf-8") as oldf, \
+                 open(current_transcript, "r", encoding="utf-8") as newf, \
+                 open(merged_input_path, "w", encoding="utf-8") as outf:
+                outf.write("=== PREVIOUS INSIGHT ===\n")
+                outf.write(oldf.read())
+                outf.write("\n\n=== NEW TRANSCRIPT ===\n")
+                outf.write(newf.read())
+
+            output_path = os.path.join(project_dir, "insights", f"insight_{timestamp}.md")
+            generate_insights_from_file(merged_input_path, output_path)
+            os.remove(merged_input_path)
+        else:
+            output_path = os.path.join(project_dir, "insights", f"insight_{timestamp}.md")
+            generate_insights_from_file(current_transcript, output_path)
+
+        # Update latest + JSON
+        shutil.copy(output_path, os.path.join(project_dir, "insights", "latest.md"))
+        extract_project_state(os.path.join(project_dir, "insights", "latest.md"),
+                              os.path.join(project_dir, "project_state.json"))
+        return {"status": "success", "message": "Insights generated", "output": output_path}
+    except Exception as e:
+        return {"status": "failed", "error": str(e)}
+
+@app.get("/project/full_report")
+async def get_full_report(name: str):
+    """
+    Returns the raw markdown of the latest insight report (latest.md)
+    for the selected project.
+    """
+    try:
+        project_dir = os.path.join(DIARIZED_DIR, name)
+        latest_md = os.path.join(project_dir, "insights", "latest.md")
+
+        if not os.path.exists(latest_md):
+            return {"error": f"No report found for {name}"}
+
+        with open(latest_md, "r", encoding="utf-8") as f:
+            content = f.read()
+        return {"name": name, "content": content}
+
+    except Exception as e:
+        return {"error": str(e)}
+
 
 @app.on_event("startup")
 async def startup_event():

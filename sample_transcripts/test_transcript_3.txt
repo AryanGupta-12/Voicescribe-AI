@@ -1,0 +1,27 @@
+Alex: Morning, Jamie! Great job with the demo last week — the feedback was really positive.
+
+Jamie: Morning, Alex! Thanks — they seemed to really like the app’s simplicity and the local farm focus.
+
+Alex: Definitely. The stakeholders did ask for a few additions — especially around delivery tracking and a dashboard for farmers. How’s progress on those?
+
+Jamie: We’ve started working on both. Delivery tracking now shows live driver updates using a map interface. The backend API is ready; we’re finalizing the front-end design.
+
+Alex: Nice! And the farmer dashboard?
+
+Jamie: We’ve implemented basic analytics showing total orders, revenue, and top-selling products. Next, we’ll add filters and export options.
+
+Alex: Great. How’s performance overall? I remember a few delays switching between farms.
+
+Jamie: We optimized that by caching farm data. Navigation is much smoother now.
+
+Alex: Awesome. Are we still on track for the pilot launch next week?
+
+Jamie: Yes — we’re doing full testing this week. Assuming no major bugs, we’ll go live as planned.
+
+Alex: Perfect. Let’s schedule a quick review on Friday. I’ll also prepare stakeholder update slides.
+
+Jamie: Sounds good. I’ll send over the latest build and a short demo video for the pilot users.
+
+Alex: Excellent. Thanks, Jamie — we’re really close to launch!
+
+Jamie: Thanks, Alex. Excited to see Farm2Door go live!

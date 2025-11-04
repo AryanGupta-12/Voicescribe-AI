@@ -1,0 +1,26 @@
+=== SPEAKER DIARIZATION TRANSCRIPT ===
+                Total speakers detected: 2
+
+                === TRANSCRIPT ===
+
+Alex: Morning, Jamie. Thanks for joining — I wanted to go over the new project we’re kicking off: Farm2Door.
+
+Jamie: Morning, Alex! Sounds good. What’s the main goal for the app?
+
+Alex: The idea is to connect local farmers directly with customers. Users should be able to browse nearby farms, view available produce, place orders, and choose delivery or pickup.
+
+Jamie: Got it. So essentially an online marketplace for farm-fresh products.
+
+Alex: Exactly. We’ll need features like farm profiles, product listings, a shopping cart, and a payment gateway — probably Stripe for transactions.
+
+Jamie: Noted. What’s the expected timeline?
+
+Alex: We’re targeting a stakeholder demo in three weeks, and ideally, a pilot launch in six weeks after that.
+
+Jamie: That’s tight but doable. I’ll start by setting up the core app structure and database this week.
+
+Alex: Perfect. Also, let’s keep the UI simple and clean — focus on usability over design flair for now.
+
+Jamie: Agreed. I’ll prepare wireframes and share them by Friday for review.
+
+Alex: Great. We’ll sync again next week to check progress. Thanks, Jamie — let’s make this a success.

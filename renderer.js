@@ -1,4 +1,6 @@
 const { ipcRenderer } = require('electron');
+const activeWin = require('active-win');
+const overviewContent = document.getElementById('overviewContent');
 
 let mediaRecorder;
 let audioChunks = [];
@@ -15,6 +17,9 @@ const downloadSection = document.getElementById('downloadSection');
 const audioLink = document.getElementById('audioLink');
 const diarizedLink = document.getElementById('diarizedLink');
 const statusText = document.getElementById('status');
+const viewFullSummaryBtn = document.getElementById('viewFullSummaryBtn');
+const projectSelect = document.getElementById('projectSelect');
+const meetingTitleDiv = document.getElementById('meetingTitle');
 
 startBtn.addEventListener('click', startRecording);
 stopBtn.addEventListener('click', stopRecording);
@@ -22,23 +27,165 @@ stopBtn.addEventListener('click', stopRecording);
 // CONTROL SOCKET: receives start/stop from backend presence poller
 let controlSocket = null;
 
+async function getMeetingTitle() {
+  try {
+    const win = await activeWin();
+    if (win && win.title && win.title.includes("Microsoft Teams")) {
+      // Example title: "Project Orion – Microsoft Teams"
+      return win.title.replace(" - Microsoft Teams", "").replace("– Microsoft Teams", "").trim();
+    }
+  } catch (err) {
+    console.error("Failed to get meeting title:", err);
+  }
+  return "Unknown_Meeting";
+}
+
+function normalizeName(s) {
+  if (!s) return "";
+  return s.toString().toLowerCase().replace(/[^\w\s]/g, "").replace(/\s+/g, " ").trim();
+}
+
+async function fetchProjects() {
+  console.log("🔎 Fetching project list...");
+  try {
+    const resp = await fetch('http://localhost:8000/projects');
+    const data = await resp.json();
+    const projects = (data.projects || []).map(p => p.name);
+    populateProjectDropdown(projects);
+  } catch (err) {
+    console.error("Failed to fetch projects:", err);
+    populateProjectDropdown([]);
+  }
+}
+
+function populateProjectDropdown(projects) {
+  projectSelect.innerHTML = "";
+  const defaultOption = document.createElement('option');
+  defaultOption.value = "";
+  defaultOption.textContent = "-- Select project --";
+  projectSelect.appendChild(defaultOption);
+
+  for (const p of projects) {
+    const opt = document.createElement('option');
+    opt.value = p;
+    opt.textContent = p;
+    projectSelect.appendChild(opt);
+  }
+
+  // restore previous selection if any
+  const saved = localStorage.getItem("selectedProject");
+  if (saved) {
+    const match = Array.from(projectSelect.options).find(o => o.value === saved);
+    if (match) projectSelect.value = saved;
+  }
+}
+
+projectSelect.addEventListener('change', () => {
+  const val = projectSelect.value;
+  localStorage.setItem("selectedProject", val);
+});
+
+// Try to match meeting title to a project list (simple fuzzy using includes)
+function findMatchingProject(meetingTitle, projects) {
+  const nMeeting = normalizeName(meetingTitle);
+  if (!nMeeting) return null;
+  for (const p of projects) {
+    const np = normalizeName(p);
+    if (!np) continue;
+    if (np === nMeeting) return p;
+    if (np.includes(nMeeting) || nMeeting.includes(np)) return p;
+  }
+  // secondary pass: token overlap
+  const mtokens = new Set(nMeeting.split(" "));
+  let best = null; let bestScore = 0;
+  for (const p of projects) {
+    const np = normalizeName(p);
+    const ptokens = np.split(" ");
+    let score = 0;
+    for (const t of ptokens) if (mtokens.has(t)) score++;
+    if (score > bestScore) { bestScore = score; best = p; }
+  }
+  if (bestScore >= 1) return best;
+  return null;
+}
+
+// Create project on server
+async function createProjectOnServer(name) {
+  try {
+    const resp = await fetch('http://localhost:8000/projects/create', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name })
+    });
+    return await resp.json();
+  } catch (err) {
+    console.error("Failed to create project:", err);
+    return { error: err.message };
+  }
+}
+
+async function ensureProjectForMeeting(meetingTitle) {
+  // load current project list
+  let resp, data;
+  try {
+    resp = await fetch('http://localhost:8000/projects');
+    data = await resp.json();
+  } catch (err) {
+    console.error("Failed to fetch projects:", err);
+    data = { projects: [] };
+  }
+  const projects = (data.projects || []).map(p => p.name);
+  // try match
+  const match = findMatchingProject(meetingTitle, projects);
+  if (match) {
+    projectSelect.value = match;
+    localStorage.setItem("selectedProject", match);
+    return match;
+  }
+  // no match -> create new
+  const createResp = await createProjectOnServer(meetingTitle);
+  if (createResp && createResp.project && createResp.project.name) {
+    // refresh projects and select
+    await fetchProjects();
+    projectSelect.value = createResp.project.name;
+    localStorage.setItem("selectedProject", createResp.project.name);
+    return createResp.project.name;
+  } else {
+    // fallback: use raw meeting title (sanitization will occur server-side too)
+    projectSelect.value = meetingTitle;
+    localStorage.setItem("selectedProject", meetingTitle);
+    return meetingTitle;
+  }
+}
+
 function setupControlSocket() {
   try {
     controlSocket = new WebSocket('ws://localhost:8000/ws/control');
 
     controlSocket.onopen = () => {
       console.log("Control socket connected");
-      // Optionally send a simple keepalive or identification
-      // controlSocket.send(JSON.stringify({ client: 'renderer' }));
     };
 
-    controlSocket.onmessage = (evt) => {
+    controlSocket.onmessage = async (evt) => {
       try {
         const payload = JSON.parse(evt.data);
         if (payload && payload.command) {
           console.log("Control command received:", payload.command);
           if (payload.command === 'start') {
             // only start if not already recording
+            // but first, detect meeting title and match project
+            try {
+              const mt = await getMeetingTitle();
+              meetingTitleDiv.textContent = mt;
+              // try to match/create project in background (non-blocking start)
+              ensureProjectForMeeting(mt).then((projName) => {
+                console.log("Project selected for meeting:", projName);
+              }).catch(err => console.error(err));
+
+            } catch (e) {
+              console.error("Error during meeting detection:", e);
+            }
+
             if (!isRecording) {
               startRecording();
             } else {
@@ -59,12 +206,11 @@ function setupControlSocket() {
 
     controlSocket.onclose = () => {
       console.log("Control socket closed — will retry in 5s");
-      // try reconnect after delay
       setTimeout(setupControlSocket, 5000);
     };
 
     controlSocket.onerror = (err) => {
-      console.error("Control socket error", err);
+      console.error("Control socket error:", err);
       controlSocket.close();
     };
   } catch (e) {
@@ -73,10 +219,14 @@ function setupControlSocket() {
 }
 
 // Call setup on load
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
   setupControlSocket();
-});
+  await fetchProjects();
 
+  // set meeting title display from localStorage if present
+  const savedTitle = localStorage.getItem("currentMeetingName");
+  if (savedTitle) meetingTitleDiv.textContent = savedTitle;
+});
 
 async function startRecording() {
   try {
@@ -120,6 +270,13 @@ async function startRecording() {
 
     socket = new WebSocket('ws://localhost:8000/ws');
     
+    // Capture current Teams meeting title (if any)
+    const meetingTitle = await getMeetingTitle();
+    localStorage.setItem("currentMeetingName", meetingTitle);
+    meetingTitleDiv.textContent = meetingTitle;
+    console.log("🎯 Current Meeting:", meetingTitle);
+
+
     socket.onopen = () => {
       statusText.textContent = 'Recording...';
       isRecording = true;
@@ -201,9 +358,13 @@ async function stopRecording() {
     formData.append('audio', audioBlob, 'recording.webm');
 
     try {
-      const response = await fetch(`http://localhost:8000/save?session_id=${sessionId}`, {
-        method: 'POST'
-      });
+      // Use selected project if available else stored meeting title
+      const selectedProject = projectSelect.value || localStorage.getItem("currentMeetingName") || "Unknown_Meeting";
+      const meetingTitle = localStorage.getItem("currentMeetingName") || selectedProject;
+      const response = await fetch(
+        `http://localhost:8000/save?session_id=${sessionId}&meeting_name=${encodeURIComponent(meetingTitle)}`,
+        { method: 'POST' }
+      );
     
       const result = await response.json();
       
@@ -222,4 +383,82 @@ async function stopRecording() {
       console.error(err);
     }
   }, 500);
+  
+  
 }
+
+async function loadProjectOverview(projectName) {
+  try {
+    const resp = await fetch(`http://localhost:8000/project/overview?name=${encodeURIComponent(projectName)}`);
+    const data = await resp.json();
+    if (data && data.project_name) {
+      overviewContent.innerHTML = `
+        <h3>${data.project_name}</h3>
+        <p><strong>Action Items:</strong> ${window.marked.parse(data.action_items || 'N/A')}</p>
+        <p><strong>Gaps:</strong> ${window.marked.parse(data.gaps || 'N/A')}</p>
+        <p><strong>Questions:</strong> ${window.marked.parse(data.questions || 'N/A')}</p>
+        <p><strong>Status:</strong> ${window.marked.parse(data.current_status || 'N/A')}</p>
+        <p><strong>Next Steps:</strong> ${window.marked.parse(data.next_steps || 'N/A')}</p>
+        <p><strong>Last Updated:</strong> ${new Date(data.last_updated).toLocaleString()}</p>
+      `;
+    } else {
+      overviewContent.innerHTML = `<p>No overview available for this project.</p>`;
+    }
+  } catch (err) {
+    overviewContent.innerHTML = `<p style="color:red;">Failed to load project overview.</p>`;
+    console.error(err);
+  }
+}
+
+projectSelect.addEventListener('change', (e) => {
+  const selected = e.target.value;
+  const viewBtn = document.getElementById('viewFullSummaryBtn');
+  
+  if (!selected) {
+    overviewContent.innerHTML = `<p>Select a project to view details.</p>`;
+    viewBtn.classList.remove('active');
+    viewBtn.disabled = true;
+    return;
+  }
+
+  viewBtn.classList.add('active');
+  viewBtn.disabled = false;
+  setTimeout(() => loadProjectOverview(selected), 300);
+});
+
+
+viewFullSummaryBtn.addEventListener('click', async () => {
+  const selected = projectSelect.value;
+  if (!selected) {
+    alert("Please select a project first.");
+    return;
+  }
+
+  try {
+    const resp = await fetch(`http://localhost:8000/project/full_report?name=${encodeURIComponent(selected)}`);
+    const data = await resp.json();
+    if (data.error) {
+      alert(data.error);
+      return;
+    }
+
+    // Create modal or simple popup window to display full markdown
+    const mdWindow = window.open("", "_blank", "width=900,height=700,scrollbars=yes");
+    mdWindow.document.write(`
+      <html>
+      <head>
+        <title>${data.name} – Full Summary</title>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css/github-markdown.min.css">
+        <style>body{margin:20px;font-family:Inter,Segoe UI,sans-serif;}pre{background:#f7f7f7;padding:10px;}</style>
+      </head>
+      <body class="markdown-body">
+        ${window.marked.parse(data.content)}
+      </body>
+      </html>
+    `);
+    mdWindow.document.close();
+  } catch (err) {
+    console.error("Failed to load full summary:", err);
+    alert("Failed to load full summary.");
+  }
+});
